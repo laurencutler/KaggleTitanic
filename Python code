@@ -1,0 +1,112 @@
+#Importing pandas library and sklearn modules
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.model_selection import cross_val_score
+
+#Reading data
+train=pd.read_csv(r"/Users/laurencutler/Kaggle/titanic/train.csv")
+test=pd.read_csv(r"/Users/laurencutler/Kaggle/titanic/test.csv")
+gender=pd.read_csv(r"/Users/laurencutler/Kaggle/titanic/gender_submission.csv")
+
+#Displaying first couple of rows + all columns 
+pd.set_option('display.max_columns', None)
+train.head()
+
+#Removing 'Cabin' column as it has many missing values
+del train['Cabin']
+
+#Count the number of missing values for each remaining column and report the results
+num_missing = (train[['Pclass', 'Name', 'Sex', 'Age', 'SibSp', 'Parch', 'Fare', 'Embarked']]).isna().sum()
+print(num_missing)
+
+#Summarize the shape of the raw data
+print(train.shape)
+#Removing rows with missing values and summarize shape again
+train.dropna(inplace=True)
+print(train.shape)
+
+#Count the number of missing values for each column
+num_missing = (test[['Pclass', 'Name', 'Sex', 'Age', 'SibSp', 'Parch', 'Fare', 'Embarked']]).isna().sum()
+#Report the results - Age, Embarked and Fare appear to be missing data
+print(num_missing)    
+
+#Identifying the 'Titles' in the 'Names' column, e.g. Mr/Mrs etc
+def get_title(name):
+    if '.' in name:
+        return name.split(',')[1].split('.')[0].strip()
+    else:
+        return 'Unknown'
+
+#Report a list of the different titles seen in the dataset
+titles = sorted(set([x for x in train.Name.map(lambda x: get_title(x))]))
+print('Different titles found on the dataset:')
+print(len(titles), ':', titles)
+print()
+
+#Reducing title data to just 'Mr', 'Mrs', 'Miss' and 'Master'
+def replace_titles(x):
+    title = x['Title']
+    if title in ['Capt', 'Col', 'Don', 'Jonkheer', 'Major', 'Rev', 'Sir']:
+        return 'Mr'
+    elif title in ['the Countess', 'Mme', 'Lady', 'Dona']:
+        return 'Mrs'
+    elif title in ['Mlle', 'Ms']:
+        return 'Miss'
+    elif title =='Dr':
+        if x['Sex']=='male':
+            return 'Mr'
+        else:
+            return 'Mrs'
+    else:
+        return title
+    
+#Create new column in training data for 'Title'
+train['Title'] = train['Name'].map(lambda x: get_title(x))
+train['Title'] = train.apply(replace_titles, axis=1)
+# Check that the number of Mr, Mrs and Miss are the same that 'male' and 'female'
+print('Title column values. Males and females are the same that for the "Sex" column:')
+print(train.Title.value_counts())
+
+#Repeating for test data
+test['Title'] = test['Name'].map(lambda x: get_title(x))
+test['Title'] = test.apply(replace_titles, axis=1)
+
+#Defining the features along with X, the columns used to make predictions,
+#and y, the prediction target
+y = train["Survived"]
+features = ["Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked", "Title"]
+X = pd.get_dummies(train[features])
+X_test = pd.get_dummies(test[features])
+
+#Removing NaN values from test data
+X_test.fillna(X_test.mean(), inplace=True)
+
+#Creating a pipeline for model predictions
+my_pipeline = Pipeline(steps=[
+    ('preprocessor', SimpleImputer()),
+    ('model', RandomForestClassifier(n_estimators=107, random_state=1))])
+    
+#Predictions
+model = RandomForestClassifier(n_estimators=107, max_depth=5, random_state=1)
+model.fit(X, y)
+predictions = model.predict(X_test)
+
+#Calculating the average MAE score
+scores = -1* cross_val_score (my_pipeline, X, y, cv=5, scoring = 'neg_mean_absolute_error')
+print(scores)
+print("MAE scores:\n", scores)
+print("Average MAE score (across experiments):")
+print(scores.mean())
+
+#Saving submission file
+output = pd.DataFrame({'PassengerId': test.PassengerId, 'Survived': predictions})
+output.to_csv('my_submission3.csv', index=False)
+print("Your submission was successfully saved!")
+
+
+
+
+
+
